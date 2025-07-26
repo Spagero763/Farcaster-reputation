@@ -1,83 +1,100 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { verifyFarcasterCast } from '@/app/actions';
-import { Loader2, Award } from 'lucide-react';
+import type { VerifyCastOutput } from '@/ai/flows/verify-cast';
+import { Loader2, Award, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { CONTRACT_ABI } from '@/lib/contractAbi';
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
 const BASE_SEPOLIA_SCAN_URL = 'https://sepolia.basescan.org';
 
+type VerificationResult = VerifyCastOutput;
+
 export function FarcasterReputationClaimer() {
   const { isConnected } = useAccount();
   const [castHash, setCastHash] = useState('');
-  const [fid, setFid] = useState<number | null>(null);
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  const { data: hash, writeContract, isPending: isClaiming, error: claimError } = useWriteContract({
-    mutation: {
-      onSuccess: () => {
-        toast.success('Claim transaction sent! Waiting for confirmation...');
-      },
-      onError: (error) => {
-        toast.error(error.message);
-      },
-    },
-  });
+  const { data: hash, writeContract, isPending: isClaiming, error: claimError } = useWriteContract();
   
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
     hash,
   });
 
-  const handleVerifyAndClaim = async () => {
+  const handleVerify = async () => {
     if (!castHash.trim() || !castHash.startsWith('0x')) {
       toast.error('Please enter a valid cast hash.');
       return;
     }
+    setIsVerifying(true);
+    setVerificationResult(null);
+    toast.loading('Verifying cast...');
 
     try {
-      toast.loading('Verifying cast...');
       const result = await verifyFarcasterCast({ castHash });
       toast.dismiss();
 
       if (result.isValid && result.authorFid) {
-        setFid(result.authorFid);
-        toast.success(`Verified cast from @${result.username} (FID: ${result.authorFid})`, {
-            description: "You can now claim your reputation."
+        setVerificationResult(result);
+        toast.success(`Verified cast from @${result.username}`, {
+          description: "You can now claim your reputation."
         });
-        
-        writeContract({
-          address: CONTRACT_ADDRESS,
-          abi: CONTRACT_ABI,
-          functionName: 'claimReputation',
-          args: [BigInt(result.authorFid)],
-        });
-
       } else {
         toast.error('Verification Failed', { description: result.error || 'The cast could not be verified.' });
       }
     } catch (err: any) {
       toast.dismiss();
       toast.error(err.message || "An unexpected error occurred during verification.");
+    } finally {
+      setIsVerifying(false);
     }
   };
-  
-  if (isConfirmed && hash) {
+
+  const handleClaim = () => {
+    if (!verificationResult?.authorFid) {
+      toast.error("Cannot claim without a verified Farcaster ID.");
+      return;
+    }
+    
+    writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: CONTRACT_ABI,
+      functionName: 'claimReputation',
+      args: [BigInt(verificationResult.authorFid)],
+    });
+  }
+
+  useEffect(() => {
+    if (claimError) {
+      toast.error('Claim Transaction Failed', {
+        description: claimError.message
+      });
+    }
+  }, [claimError]);
+
+  useEffect(() => {
+    if (isConfirmed && hash) {
       toast.success('Reputation Claimed!', {
         description: 'Your on-chain reputation has been recorded.',
         action: {
             label: "View Transaction",
             onClick: () => window.open(`${BASE_SEPOLIA_SCAN_URL}/tx/${hash}`, '_blank')
         },
-        duration: 5000,
+        duration: 8000,
         important: true,
       });
-  }
+      setVerificationResult(null);
+      setCastHash('');
+    }
+  }, [isConfirmed, hash]);
 
 
   return (
@@ -101,28 +118,49 @@ export function FarcasterReputationClaimer() {
                     placeholder="Enter cast hash (e.g., 0x...)"
                     value={castHash}
                     onChange={(e) => setCastHash(e.target.value)}
-                    disabled={isClaiming || isConfirming}
-                    className="w-full border p-3 rounded-lg mb-4"
+                    disabled={isVerifying || isClaiming || isConfirming || !!verificationResult}
+                    className="w-full border p-3 rounded-lg"
                 />
+
+                <Button
+                  onClick={handleVerify}
+                  disabled={!castHash || isVerifying || !!verificationResult}
+                  className="w-full"
+                  variant="secondary"
+                >
+                  {isVerifying ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying...</>
+                  ) : (
+                    <>Verify Cast</>
+                  )}
+                </Button>
             </div>
         )}
       </CardContent>
-      <CardFooter>
-        <Button
-          onClick={handleVerifyAndClaim}
-          disabled={!isConnected || isClaiming || isConfirming || !castHash}
-          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
-        >
-          {(isClaiming || isConfirming) ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {isConfirming ? 'Confirming in wallet...' : 'Claiming...'}</>
-          ) : (
-            <>
-              <Award className="mr-2 h-4 w-4" /> Verify & Claim Reputation
-            </>
-          )}
-        </Button>
-      </CardFooter>
+      {isConnected && verificationResult && (
+        <CardFooter className="flex-col gap-4">
+          <div className="text-center text-sm text-green-600 flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md w-full justify-center">
+            <CheckCircle className="h-5 w-5"/>
+            <span>
+              Verified! You can claim for FID: <strong>{verificationResult.authorFid}</strong>
+            </span>
+          </div>
+          <Button
+            onClick={handleClaim}
+            disabled={isClaiming || isConfirming}
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
+          >
+            {(isClaiming || isConfirming) ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {isConfirming ? 'Waiting for confirmation...' : 'Claiming in wallet...'}</>
+            ) : (
+              <>
+                <Award className="mr-2 h-4 w-4" /> Claim Reputation
+              </>
+            )}
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }

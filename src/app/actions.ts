@@ -31,6 +31,7 @@ export async function verifyFarcasterCast(
     return result;
   } catch (error) {
     console.error('Error in verifyFarcasterCast action:', error);
-    return { isValid: false, error: 'Failed to verify cast.' };
+    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred during verification.';
+    return { isValid: false, error: `Failed to verify cast: ${errorMessage}` };
   }
 }
