@@ -18,10 +18,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // The cross-origin issue is specific to the dev environment and this is not needed for production.
-  // experimental: {
-  //   allowedDevOrigins: ['*'],
-  // },
 };
 
 export default nextConfig;
