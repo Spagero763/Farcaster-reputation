@@ -1,4 +1,3 @@
-// src/ai/flows/verify-cast.ts
 'use server';
 
 /**
@@ -9,8 +8,9 @@
  * - VerifyCastOutput - The return type for the verifyCast function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 
 const VerifyCastInputSchema = z.object({
   castHash: z.string().describe('The hash of the Farcaster cast to verify.'),
@@ -22,6 +22,8 @@ const VerifyCastOutputSchema = z.object({
   isValid: z.boolean().describe('Whether the cast is valid based on Neynar API verification.'),
   authorFid: z.number().optional().describe('The Farcaster ID of the cast author, if the cast is valid.'),
   error: z.string().optional().describe('An error message if verification fails.'),
+  username: z.string().optional().describe('The username of the cast author.'),
+  pfp: z.string().optional().describe("The author's profile picture URL."),
 });
 export type VerifyCastOutput = z.infer<typeof VerifyCastOutputSchema>;
 
@@ -35,41 +37,27 @@ const verifyCastFlow = ai.defineFlow(
     inputSchema: VerifyCastInputSchema,
     outputSchema: VerifyCastOutputSchema,
   },
-  async input => {
+  async ({ castHash, neynarApiKey }) => {
+    if (!neynarApiKey) {
+      const error = 'Neynar API key is not configured.';
+      console.error(error);
+      return { isValid: false, error };
+    }
+
+    const client = new NeynarAPIClient(neynarApiKey);
+
     try {
-      const endpoint = `https://api.neynar.com/v2/farcaster/cast?identifier=${input.castHash}&type=hash`;
-      const res = await fetch(endpoint, {
-        headers: {
-          'accept': 'application/json',
-          'api_key': input.neynarApiKey,
-        },
-      });
+      const { cast } = await client.lookupCastByHash(castHash);
+      const { author } = cast;
 
-      if (!res.ok) {
-        console.error('Neynar API error:', res.status, res.statusText);
-        const errorData = await res.json().catch(() => ({ message: 'Unknown API error' }));
-        return {
-          isValid: false,
-          error: errorData.message || `API Error: ${res.statusText}`,
-        };
-      }
-
-      const data = await res.json();
-
-      if (data.cast && data.cast.author && data.cast.author.fid) {
-        return {
-          isValid: true,
-          authorFid: data.cast.author.fid,
-        };
-      } else {
-        console.warn('Cast not found or author fid missing in Neynar response.');
-        return {
-          isValid: false,
-          error: data.message || 'Cast not found or author fid missing.',
-        };
-      }
+      return {
+        isValid: true,
+        authorFid: author.fid,
+        username: author.username,
+        pfp: author.pfp_url,
+      };
     } catch (error) {
-      console.error('Error verifying cast:', error);
+      console.error('Error verifying cast with Neynar SDK:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
       return {
         isValid: false,
