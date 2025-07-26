@@ -1,4 +1,4 @@
-# Farcaster ReputationClaim Mini App
+ld# Farcaster ReputationClaim Mini App
 
 This mini app connects Farcaster and a verified ReputationClaim smart contract on Base Sepolia. Users verify their `castHash`, and if valid, they can claim onchain reputation.
 
