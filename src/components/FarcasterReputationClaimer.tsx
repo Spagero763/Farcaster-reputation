@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { verifyFarcasterCast } from '@/app/actions';
-import { Loader2, Award, ArrowUpRight } from 'lucide-react';
+import { Loader2, Award } from 'lucide-react';
 import { toast } from 'sonner';
 import { CONTRACT_ABI } from '@/lib/contractAbi';
 
@@ -55,7 +55,7 @@ export function FarcasterReputationClaimer() {
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: 'claimReputation',
-          args: [result.authorFid],
+          args: [BigInt(result.authorFid)],
         });
 
       } else {
@@ -67,13 +67,15 @@ export function FarcasterReputationClaimer() {
     }
   };
   
-  if (isConfirmed) {
+  if (isConfirmed && hash) {
       toast.success('Reputation Claimed!', {
         description: 'Your on-chain reputation has been recorded.',
         action: {
             label: "View Transaction",
             onClick: () => window.open(`${BASE_SEPOLIA_SCAN_URL}/tx/${hash}`, '_blank')
         },
+        duration: 5000,
+        important: true,
       });
   }
 
